@@ -24,11 +24,14 @@ const ipOf = req => (req.headers['x-forwarded-for'] || req.socket.remoteAddress 
 const blocked = ip => { const t = tries.get(ip); return t && t.n >= 5 && Date.now() - t.t < 15 * 60e3; };
 const fail = ip => { const t = tries.get(ip); tries.set(ip, { n: t && Date.now() - t.t < 15 * 60e3 ? t.n + 1 : 1, t: Date.now() }); };
 
-const view = f => fs.readFileSync(path.join(__dirname, 'views', f));
+const view = f => {
+  for (const p of [path.join(__dirname, 'views', f), path.join(__dirname, f)]) if (fs.existsSync(p)) return fs.readFileSync(p);
+  throw new Error('Arquivo não encontrado no repositório: ' + f + ' (esperado em views/' + f + ')');
+};
 const send = (res, code, type, body, h = {}) => { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', ...h }); res.end(body); };
 const secure = req => req.headers['x-forwarded-proto'] === 'https';
 
-http.createServer((req, res) => {
+http.createServer((req, res) => { try {
   const url = req.url.split('?')[0], ip = ipOf(req);
 
   if (req.method === 'POST' && url === '/login') {
@@ -55,4 +58,4 @@ http.createServer((req, res) => {
     return authed(req) ? send(res, 200, 'text/html; charset=utf-8', view('app.html')) : send(res, 200, 'text/html; charset=utf-8', view('login.html'));
   }
   send(res, 404, 'text/plain', 'Não encontrado');
-}).listen(PORT, () => console.log('Print3D Manager rodando na porta ' + PORT));
+} catch (e) { console.error(e.message); send(res, 500, 'text/plain; charset=utf-8', e.message); } }).listen(PORT, () => console.log('Print3D Manager rodando na porta ' + PORT));
