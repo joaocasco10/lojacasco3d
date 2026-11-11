@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Print3D Manager</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>tailwind.config={darkMode:'class'};try{var t=localStorage.getItem('p3d_theme');if(t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches)document.documentElement.classList.add('dark')}catch(e){}</script>
+<style type="text/tailwindcss">
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);color-scheme:light}html.dark{color-scheme:dark}
+@layer components{
+.card{@apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 transition-all duration-300}
+.inp{@apply w-full mt-1 px-3 py-2 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 outline-none focus:border-zinc-900 dark:focus:border-zinc-100 transition-all duration-300}
+.lbl{@apply block text-xs font-medium text-zinc-500 dark:text-zinc-400}
+.btn{@apply px-4 py-2 text-sm rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-80 active:scale-95 transition-all duration-300}
+.btn2{@apply px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-95 transition-all duration-300}
+.h3{@apply text-sm font-semibold mb-3}
+}
+</style>
+</head>
+<body class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen font-sans">
+<header class="sticky top-0 z-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur border-b border-zinc-200 dark:border-zinc-800">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+    <div class="font-semibold tracking-tight">▣ Print3D Manager</div>
+    <div class="flex gap-2"><button class="btn2" onclick="toggleTheme()">Claro / Escuro</button><a href="/logout" class="btn2">Sair</a></div>
+  </div>
+  <nav id="nav" class="max-w-6xl mx-auto px-4 pb-2 flex gap-2 overflow-x-auto"></nav>
+</header>
+<main id="app" class="max-w-6xl mx-auto p-4"></main>
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-sm opacity-0 pointer-events-none transition-all duration-300"></div>
+
+<script>
+const KEY='p3d_v1';
+const $=s=>document.querySelector(s);
+const R=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fd=s=>s?s.split('-').reverse().join('/'):'—';
+const dt=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+const FIL=0.10; // R$ 100/kg fixo
+const ST={fila:'Na Fila',imprimindo:'Imprimindo',pronto:'Finalizado',entregue:'Entregue'};
+const PAY={integral:'Pago Integral','50':'50% Pago',retirada:'Pago na Retirada'};
+const it=(name,g,h,pack,price,qty=1)=>({name,g,h,pack,price,qty});
+
+function seed(){return{cfg:{fil:0.10,kwh:0.768,kw:0.2},
+catalog:[
+{id:1,name:'Boneco Articulado',img:'',g:35,h:2.5,price:25},
+{id:2,name:'Suporte de Celular',img:'',g:50,h:3,price:30},
+{id:3,name:'Vaso Geométrico',img:'',g:120,h:7,price:60}],
+orders:[
+{id:11,client:'Marina Souza',phone:'(41) 99999-1111',date:dt(-4),due:dt(2),items:[it('Boneco Articulado',35,2.5,1,10,4)],freight:false,fv:0,pay:'50',img:'',status:'imprimindo',prio:1},
+{id:12,client:'Carlos Lima',phone:'(41) 98888-2222',date:dt(-2),due:dt(5),items:[it('Suporte de Celular',50,3,1.5,30,2)],freight:true,fv:18,pay:'integral',img:'',status:'fila',prio:2},
+{id:13,client:'Ateliê Flor',phone:'(41) 97777-3333',date:dt(-6),due:dt(0),items:[it('Vaso Geométrico',120,7,2,60,1)],freight:false,fv:0,pay:'retirada',img:'',status:'pronto',prio:3},
+{id:14,client:'João Pedro',phone:'(41) 96666-4444',date:dt(-15),due:dt(-8),items:[it('Chaveiro Personalizado',8,0.6,0.5,8,10)],freight:true,fv:12,pay:'integral',img:'',status:'entregue',prio:4}]}}
+
+function load(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r)}catch(e){}return seed()}
+let S=load();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Armazenamento cheio: use fotos menores')}}
+function toast(m){const t=$('#toast');t.textContent=m;t.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.opacity=0,2200)}
+function toggleTheme(){const d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('p3d_theme',d?'dark':'light')}catch(e){}}
+
+// ---- cálculos ----
+function calc(o){let f=0,e=0,p=0,r=0;
+ o.items.forEach(i=>{const q=+i.qty||1;f+=(+i.g||0)*FIL*q;e+=S.cfg.kw*(+i.h||0)*S.cfg.kwh*q;p+=(+i.pack||0)*q;r+=(+i.price||0)*q});
+ const fr=o.freight?(+o.fv||0):0,cost=f+e+p+fr,total=r+fr;
+ let rec=o.pay==='integral'?total:o.pay==='50'?total/2:0;
+ if(o.status==='entregue')rec=total;
+ return{f,e,p,fr,cost,total,profit:total-cost,rec,pend:total-rec}}
+const unitCost=c=>(+c.g||0)*FIL+S.cfg.kw*(+c.h||0)*S.cfg.kwh;
+
+// ---- estado de UI ----
+let tab='dash',q='';
+const blank=()=>it('',0,0,0,0,1);
+const newDraft=()=>({id:null,client:'',phone:'',date:dt(0),due:dt(7),items:[blank()],freight:false,fv:0,pay:'50',img:'',status:'fila'});
+let draft=newDraft(),back='fila';
+let cat={name:'',img:'',g:'',h:'',price:''};
+
+const TABS=[['dash','Dashboard'],['novo','Novo Pedido'],['fila','Fila'],['cat','Catálogo'],['hist','Histórico']];
+function go(t){tab=t;render();window.scrollTo(0,0)}
+function render(){
+ $('#nav').innerHTML=TABS.map(([k,l])=>`<button onclick="go('${k}')" class="px-3 py-1.5 text-sm rounded-lg whitespace-nowrap transition-all duration-300 ${tab===k?'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900':'hover:bg-zinc-100 dark:hover:bg-zinc-800'}">${l}</button>`).join('');
+ $('#app').innerHTML={dash:vDash,novo:vNovo,fila:vFila,cat:vCat,hist:vHist}[tab]();
+ if(tab==='novo')sum();
+}
+const thumb=(src,c='w-16 h-16')=>src?`<img src="${esc(src)}" class="${c} object-cover rounded-lg border border-zinc-200 dark:border-zinc-800" alt="">`:`<div class="${c} rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400">▣</div>`;
+
+// ---- Dashboard ----
+function vDash(){
+ let rec=0,pen=0,lucro=0;S.orders.forEach(o=>{const c=calc(o);rec+=c.rec;pen+=c.pend;lucro+=c.profit});
+ const n=k=>S.orders.filter(o=>o.status===k).length,tot=S.orders.length||1;
+ const kpi=(l,v,b='')=>`<div class="card"><div class="lbl">${l}</div><div class="text-2xl font-semibold mt-1">${v}</div>${b}</div>`;
+ return `<div class="space-y-4">
+ <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">${kpi('Total Recebido',R(rec))}${kpi('Total a Receber',R(pen))}${kpi('Lucro Acumulado',R(lucro))}</div>
+ <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">${kpi('Pedidos no sistema',S.orders.length)}${kpi('Na Fila',n('fila'))}${kpi('Imprimindo',n('imprimindo'))}${kpi('Prontos p/ entrega',n('pronto'))}${kpi('Entregues',n('entregue'))}</div>
+ <div class="grid lg:grid-cols-2 gap-4">
+ <div class="card"><div class="h3">Distribuição por status</div>${Object.keys(ST).map((k,i)=>`<div class="mb-3"><div class="flex justify-between text-xs mb-1"><span>${ST[k]}</span><span>${n(k)} (${Math.round(n(k)/tot*100)}%)</span></div><div class="h-2 rounded bg-zinc-100 dark:bg-zinc-800"><div class="h-2 rounded bg-zinc-900 dark:bg-zinc-100 transition-all duration-300" style="width:${n(k)/tot*100}%;opacity:${1-i*0.2}"></div></div></div>`).join('')}</div>
+ <div class="card"><div class="h3">Parâmetros de custo</div><div class="grid grid-cols-3 gap-3">
+ <div class="lbl">Filamento<div class="mt-1 px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100">R$ 100/kg (fixo)</div></div>
+ <label class="lbl">Energia R$/kWh<input class="inp" type="number" step="0.001" value="${S.cfg.kwh}" onchange="cfg('kwh',this.value)"></label>
+ <label class="lbl">Potência kW<input class="inp" type="number" step="0.05" value="${S.cfg.kw}" onchange="cfg('kw',this.value)"></label></div>
+ <p class="text-xs text-zinc-500 mt-3">Filamento R$ 100/kg e energia de Curitiba R$ 0,768/kWh. Alterar recalcula tudo.</p>
+ <button class="btn2 mt-3" onclick="if(confirm('Restaurar dados de exemplo? Isso apaga seus dados atuais.')){S=seed();save();render()}">Restaurar dados de exemplo</button></div></div></div>`}
+function cfg(k,v){S.cfg[k]=+v||0;save();toast('Parâmetro atualizado');render()}
+
+// ---- Novo pedido ----
+function vNovo(){
+ return `<div class="grid lg:grid-cols-3 gap-4"><div class="lg:col-span-2 space-y-4">
+ <section class="card"><div class="h3">${draft.id?'Editando pedido':'Dados do cliente'}</div><div class="grid sm:grid-cols-2 gap-3">
+ <label class="lbl">Nome<input class="inp" value="${esc(draft.client)}" oninput="draft.client=this.value"></label>
+ <label class="lbl">Telefone / Contato<input class="inp" value="${esc(draft.phone)}" oninput="draft.phone=this.value"></label>
+ <label class="lbl">Data do pedido<input type="date" class="inp" value="${draft.date}" oninput="draft.date=this.value"></label>
+ <label class="lbl">Entrega prevista<input type="date" class="inp" value="${draft.due}" oninput="draft.due=this.value"></label></div></section>
+ <section class="card"><div class="flex flex-wrap items-center justify-between gap-2 mb-3"><div class="h3 !mb-0">Itens do pedido</div>
+ <div class="flex gap-2"><select class="inp !mt-0 !w-auto" onchange="addCat(this.value);this.value=''"><option value="">Importar do catálogo…</option>${S.catalog.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+ <button class="btn2" onclick="draft.items.push(blank());render()">+ Item</button></div></div>
+ ${draft.items.map((i,x)=>`<div class="border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 mb-3"><div class="grid grid-cols-2 sm:grid-cols-6 gap-2">
+ <label class="lbl col-span-2">Peça<input class="inp" value="${esc(i.name)}" oninput="si(${x},'name',this.value)"></label>
+ <label class="lbl">Qtd<input type="number" min="1" class="inp" value="${i.qty}" oninput="si(${x},'qty',this.value,1)"></label>
+ <label class="lbl">Filamento gasto (g)<input type="number" min="0" class="inp" value="${i.g}" oninput="si(${x},'g',this.value,1)"></label>
+ <label class="lbl">Horas<input type="number" min="0" step="0.1" class="inp" value="${i.h}" oninput="si(${x},'h',this.value,1)"></label>
+ <label class="lbl">Embalagem R$<input type="number" min="0" step="0.1" class="inp" value="${i.pack}" oninput="si(${x},'pack',this.value,1)"></label>
+ <label class="lbl">Valor unit. R$<input type="number" min="0" step="0.5" class="inp" value="${i.price}" oninput="si(${x},'price',this.value,1)"></label></div>
+ <div class="text-xs text-zinc-500 mt-2">Custo do filamento deste item: <b id="fc${x}" class="text-zinc-900 dark:text-zinc-100">${R((+i.g||0)*FIL*(+i.qty||1))}</b> <span>(${i.qty||1} un × ${i.g||0} g × R$ 0,10/g)</span></div>${draft.items.length>1?`<button class="btn2 mt-2" onclick="draft.items.splice(${x},1);render()">Remover item</button>`:''}</div>`).join('')}</section>
+ <section class="card"><div class="h3">Envio, pagamento e foto</div><div class="grid sm:grid-cols-3 gap-3">
+ <label class="lbl">Frete<select class="inp" onchange="draft.freight=this.value==='1';sum();$('#fv').disabled=!draft.freight"><option value="0">Sem Frete</option><option value="1" ${draft.freight?'selected':''}>Com Frete</option></select></label>
+ <label class="lbl">Valor do frete R$<input id="fv" type="number" min="0" class="inp" value="${draft.fv}" ${draft.freight?'':'disabled'} oninput="draft.fv=+this.value;sum()"></label>
+ <label class="lbl">Status financeiro<select class="inp" onchange="draft.pay=this.value;sum()">${Object.entries(PAY).map(([k,v])=>`<option value="${k}" ${draft.pay===k?'selected':''}>${v}</option>`).join('')}</select></label>
+ ${draft.id?`<label class="lbl">Status do pedido<select class="inp" onchange="draft.status=this.value;sum()">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${draft.status===k?'selected':''}>${v}</option>`).join('')}</select></label>`:''}</div>
+ <div class="flex items-end gap-3 mt-3">${thumb(draft.img,'w-20 h-20')}<div class="flex-1 grid sm:grid-cols-2 gap-3">
+ <label class="lbl">Upload da foto<input type="file" accept="image/*" class="inp" onchange="upImg(this.files[0],d=>{draft.img=d;render()})"></label>
+ <label class="lbl">…ou URL da imagem<input class="inp" value="${draft.img.startsWith('data:')?'':esc(draft.img)}" onchange="draft.img=this.value;render()"></label></div></div></section></div>
+ <aside><div class="card lg:sticky lg:top-28"><div class="h3">Resumo em tempo real</div><div id="sum"></div>
+ <button class="btn w-full mt-4" onclick="saveOrder()">Salvar Pedido na Fila</button>
+ ${draft.id?`<button class="btn2 w-full mt-2" onclick="draft=newDraft();go(back)">Cancelar edição</button>`:''}</div></aside></div>`}
+function si(x,k,v,num){draft.items[x][k]=num?(+v):v;const e=$('#fc'+x),m=draft.items[x];if(e){e.textContent=R((+m.g||0)*FIL*(+m.qty||1));e.nextElementSibling.textContent=`(${m.qty||1} un × ${m.g||0} g × R$ 0,10/g)`}sum()}
+function sum(){const c=calc(draft),row=(l,v,b)=>`<div class="flex justify-between py-1.5 text-sm ${b?'font-semibold border-t border-zinc-200 dark:border-zinc-800 mt-1 pt-2':''}"><span class="text-zinc-500 dark:text-zinc-400">${l}</span><span>${v}</span></div>`;
+ const el=$('#sum');if(el)el.innerHTML=row('Custo de filamento',R(c.f))+row('Custo de energia',R(c.e))+row('Embalagem',R(c.p))+row('Frete',R(c.fr))+row('Custo total',R(c.cost),1)+row('Valor total cobrado',R(c.total),1)+row('Lucro estimado',R(c.profit),1)+row('Já recebido',R(c.rec))+row('A receber',R(c.pend))}
+function addCat(id){const c=S.catalog.find(x=>x.id==id);if(!c)return;
+ const ni=it(c.name,+c.g,+c.h,0,+c.price,1);
+ if(draft.items.length===1&&!draft.items[0].name)draft.items[0]=ni;else draft.items.push(ni);
+ if(!draft.img&&c.img)draft.img=c.img;render()}
+function upImg(f,cb){if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,480/Math.max(im.width,im.height)),cv=document.createElement('canvas');cv.width=im.width*s;cv.height=im.height*s;cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);cb(cv.toDataURL('image/jpeg',.7))};im.src=r.result};r.readAsDataURL(f)}
+function saveOrder(){
+ if(!draft.client.trim())return toast('Informe o nome do cliente');
+ if(!draft.items.some(i=>i.name.trim()))return toast('Adicione ao menos um item com nome');
+ const was=!!draft.id;
+ if(draft.id){S.orders=S.orders.map(o=>o.id===draft.id?draft:o)}
+ else{draft.id=Date.now();draft.prio=Math.max(0,...S.orders.map(o=>o.prio))+1;S.orders.push(draft)}
+ save();draft=newDraft();toast(was?'Pedido atualizado':'Pedido salvo na fila');go(was?back:'fila')}
+
+// ---- Fila ----
+function vFila(){
+ const L=S.orders.filter(o=>o.status!=='entregue').sort((a,b)=>a.prio-b.prio);
+ if(!L.length)return `<div class="card text-center text-zinc-500">Fila vazia. Crie um novo pedido.</div>`;
+ const today=dt(0);
+ return `<div class="grid md:grid-cols-2 gap-4">${L.map((o,x)=>{const c=calc(o),late=o.due&&o.due<today;
+ return `<div class="card"><div class="flex gap-3">${thumb(o.img,'w-20 h-20')}<div class="flex-1 min-w-0">
+ <div class="flex justify-between gap-2"><div class="font-semibold truncate">#${x+1} · ${esc(o.client)}</div>
+ <div class="flex gap-1"><button class="btn2 !px-2" onclick="mv(${o.id},-1)">↑</button><button class="btn2 !px-2" onclick="mv(${o.id},1)">↓</button></div></div>
+ <div class="text-xs text-zinc-500">${esc(o.phone)}</div>
+ <div class="text-xs mt-1 ${late?'font-semibold underline':''}">Entrega: ${fd(o.due)}${late?' · ATRASADO':''}</div></div></div>
+ <ul class="text-sm mt-3 text-zinc-600 dark:text-zinc-300">${o.items.map(i=>`<li>${i.qty}× ${esc(i.name)}</li>`).join('')}</ul>
+ <div class="grid grid-cols-3 gap-2 text-xs mt-3"><div><div class="lbl">Total</div>${R(c.total)}</div><div><div class="lbl">Pago</div>${R(c.rec)}</div><div><div class="lbl">Pendente</div>${R(c.pend)}</div></div>
+ <div class="flex flex-wrap gap-1 mt-3">${Object.keys(ST).map(k=>`<button onclick="setSt(${o.id},'${k}')" class="px-2.5 py-1 text-xs rounded-lg border transition-all duration-300 ${o.status===k?'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-transparent':'border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800'}">${ST[k]}</button>`).join('')}</div>
+ <div class="flex gap-2 mt-3 items-center"><select class="inp !mt-0 text-xs" onchange="setPay(${o.id},this.value)">${Object.entries(PAY).map(([k,v])=>`<option value="${k}" ${o.pay===k?'selected':''}>${v}</option>`).join('')}</select>
+ <button class="btn2" onclick="editO(${o.id})">Editar</button><button class="btn2" onclick="delO(${o.id})">Excluir</button></div></div>`}).join('')}</div>`}
+function mv(id,d){const L=S.orders.filter(o=>o.status!=='entregue').sort((a,b)=>a.prio-b.prio),x=L.findIndex(o=>o.id===id),y=x+d;if(y<0||y>=L.length)return;[L[x].prio,L[y].prio]=[L[y].prio,L[x].prio];save();render()}
+function setSt(id,s){const o=S.orders.find(o=>o.id===id);o.status=s;save();toast(s==='entregue'?'Pedido entregue e movido ao Histórico':'Status atualizado');render()}
+function setPay(id,p){S.orders.find(o=>o.id===id).pay=p;save();render()}
+function editO(id){draft=JSON.parse(JSON.stringify(S.orders.find(o=>o.id===id)));back=tab;go('novo')}
+function delO(id){if(confirm('Excluir este pedido?')){S.orders=S.orders.filter(o=>o.id!==id);save();render()}}
+
+// ---- Catálogo ----
+function vCat(){
+ return `<div class="grid lg:grid-cols-3 gap-4"><div class="card h-fit"><div class="h3">Novo produto</div><div class="space-y-3">
+ <label class="lbl">Nome<input class="inp" value="${esc(cat.name)}" oninput="cat.name=this.value"></label>
+ <div class="grid grid-cols-2 gap-3"><label class="lbl">Filamento (g)<input type="number" min="0" class="inp" value="${cat.g}" oninput="cat.g=this.value;cc()"></label>
+ <label class="lbl">Horas<input type="number" min="0" step="0.1" class="inp" value="${cat.h}" oninput="cat.h=this.value;cc()"></label></div>
+ <label class="lbl">Preço de venda R$<input type="number" min="0" step="0.5" class="inp" value="${cat.price}" oninput="cat.price=this.value"></label>
+ <div class="text-sm">Filamento: <b id="cf">${R((+cat.g||0)*FIL)}</b> · Custo estimado: <b id="cc">${R(unitCost(cat))}</b></div>
+ <label class="lbl">Foto<input type="file" accept="image/*" class="inp" onchange="upImg(this.files[0],d=>{cat.img=d;toast('Foto anexada')})"></label>
+ <button class="btn w-full" onclick="addProd()">Cadastrar produto</button></div></div>
+ <div class="lg:col-span-2 grid sm:grid-cols-2 gap-4 content-start">${S.catalog.map(c=>`<div class="card"><div class="flex gap-3">${thumb(c.img,'w-16 h-16')}<div class="flex-1"><div class="font-semibold">${esc(c.name)}</div>
+ <div class="text-xs text-zinc-500">${c.g} g · ${c.h} h</div><div class="text-xs mt-1">Custo ${R(unitCost(c))} · Venda <b>${R(c.price)}</b></div></div></div>
+ <div class="flex gap-2 mt-3"><button class="btn flex-1 !text-xs" onclick="fromCat(${c.id})">Criar Pedido com este Produto</button><button class="btn2" onclick="delC(${c.id})">✕</button></div></div>`).join('')||'<div class="card text-zinc-500">Nenhum produto cadastrado.</div>'}</div></div>`}
+function cc(){$('#cc').textContent=R(unitCost(cat));$('#cf').textContent=R((+cat.g||0)*FIL)}
+function addProd(){if(!cat.name.trim())return toast('Informe o nome do produto');S.catalog.push({id:Date.now(),name:cat.name,img:cat.img,g:+cat.g||0,h:+cat.h||0,price:+cat.price||0});cat={name:'',img:'',g:'',h:'',price:''};save();toast('Produto cadastrado');render()}
+function delC(id){if(confirm('Remover do catálogo?')){S.catalog=S.catalog.filter(c=>c.id!==id);save();render()}}
+function fromCat(id){draft=newDraft();addCat(id);go('novo')}
+
+// ---- Histórico ----
+function vHist(){
+ const s=q.toLowerCase(),L=S.orders.filter(o=>o.status==='entregue'&&(!s||o.client.toLowerCase().includes(s)||o.date.includes(s)||fd(o.date).includes(s)||fd(o.due).includes(s)));
+ const lucro=L.reduce((a,o)=>a+calc(o).profit,0);
+ return `<div class="card"><div class="flex flex-wrap items-end justify-between gap-3 mb-3"><label class="lbl flex-1 min-w-[200px]">Buscar por cliente ou data<input class="inp" id="q" value="${esc(q)}" oninput="q=this.value;const p=this.selectionStart;render();const e=$('#q');e.focus();e.setSelectionRange(p,p)" placeholder="Ex.: Maria ou 10/11/2026"></label>
+ <div class="text-sm">Lucro nos resultados: <b>${R(lucro)}</b></div></div>
+ <div class="overflow-x-auto"><table class="w-full text-sm min-w-[760px]"><thead><tr class="text-left text-xs text-zinc-500 border-b border-zinc-200 dark:border-zinc-800"><th class="py-2"></th><th>Cliente</th><th>Pedido</th><th>Itens</th><th class="text-right">Cobrado</th><th class="text-right">Custo</th><th class="text-right">Lucro</th><th class="text-right">Ações</th></tr></thead><tbody>
+ ${L.map(o=>{const c=calc(o);return `<tr class="border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all duration-300"><td class="py-2">${thumb(o.img,'w-10 h-10')}</td><td>${esc(o.client)}</td><td>${fd(o.date)}</td><td>${o.items.map(i=>i.qty+'× '+esc(i.name)).join(', ')}</td><td class="text-right">${R(c.total)}</td><td class="text-right">${R(c.cost)}</td><td class="text-right font-semibold">${R(c.profit)}</td><td class="text-right whitespace-nowrap pl-2"><button class="btn2" onclick="editO(${o.id})">Editar</button> <button class="btn2" onclick="delO(${o.id})">Excluir</button></td></tr>`}).join('')||'<tr><td colspan="8" class="py-6 text-center text-zinc-500">Nenhum pedido entregue encontrado.</td></tr>'}
+ </tbody></table></div></div>`}
+
+render();
+</script>
+</body>
+</html>
