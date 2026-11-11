@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Entrar · Print3D Manager</title>
+<style>
+:root{--bg:#f4f4f5;--card:#fff;--fg:#18181b;--mut:#71717a;--bd:#d4d4d8;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#09090b;--card:#18181b;--fg:#fafafa;--mut:#a1a1aa;--bd:#3f3f46;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px}
+form{width:100%;max-width:360px;background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:28px;transition:all .3s}
+h1{font-size:18px;margin:0 0 4px}p{margin:0 0 20px;font-size:13px;color:var(--mut)}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:14px}
+input{width:100%;margin-top:6px;padding:10px 12px;font-size:15px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);outline:none;transition:all .3s}
+input:focus{border-color:var(--fg)}
+button{width:100%;padding:11px;font-size:14px;border:0;border-radius:10px;background:var(--fg);color:var(--bg);cursor:pointer;transition:all .3s}
+button:hover{opacity:.8}button:active{transform:scale(.97)}button:disabled{opacity:.5}
+#err{min-height:18px;margin:0 0 10px;font-size:13px;color:var(--fg);font-weight:600}
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>▣ Print3D Manager</h1>
+  <p>Acesso restrito. Informe seu código e senha.</p>
+  <label>Código de entrada<input id="code" autocomplete="username" autofocus required></label>
+  <label>Senha<input id="pw" type="password" autocomplete="current-password" required></label>
+  <div id="err"></div>
+  <button id="b">Entrar</button>
+</form>
+<script>
+document.getElementById('f').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const b=document.getElementById('b'),err=document.getElementById('err');
+  b.disabled=true;err.textContent='';
+  try{
+    const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value,password:document.getElementById('pw').value})});
+    const d=await r.json();
+    if(d.ok){location.reload()}else{err.textContent=d.msg||'Não foi possível entrar.';b.disabled=false}
+  }catch(x){err.textContent='Erro de conexão.';b.disabled=false}
+});
+</script>
+</body>
+</html>
